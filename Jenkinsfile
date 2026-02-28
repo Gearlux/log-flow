@@ -33,7 +33,15 @@ pipeline {
                 }
                 stage('Flake8') {
                     steps {
-                        sh "${VENV_BIN}/flake8 logflow tests examples"
+                        // Generate flake8 output in a format that can be converted to JUnit XML
+                        sh "${VENV_BIN}/flake8 logflow tests examples --tee --output-file=flake8.txt"
+                        // Convert flake8.txt to JUnit XML for Jenkins reporting
+                        sh "${VENV_BIN}/flake8_junit flake8.txt flake8-report.xml"
+                    }
+                    post {
+                        always {
+                            junit 'flake8-report.xml'
+                        }
                     }
                 }
             }
