@@ -60,11 +60,11 @@ pipeline {
             }
             post {
                 always {
-                    // Archive JUnit test results
+                    // Archive and display JUnit test results
                     junit allowEmptyResults: true, testResults: 'test-report.xml'
-                    // Archive Cobertura coverage results (if plugin is installed)
-                    // Note: modern Jenkins uses the 'cobertura' or 'recordCoverage' step
-                    archiveArtifacts artifacts: 'coverage.xml', fingerprint: true
+                    
+                    // Display Coverage in Jenkins UI using Code Coverage API Plugin
+                    recordCoverage tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']]
                 }
             }
         }
