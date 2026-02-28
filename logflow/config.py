@@ -26,7 +26,7 @@ def load_config() -> Dict[str, Any]:
     1. Local logflow.yaml / logflow.yml
     2. Local pyproject.toml ([tool.logflow] section)
     3. XDG User Config (~/.config/logflow/config.yaml)
-    
+
     Returns:
         A dictionary containing the merged configuration.
     """
