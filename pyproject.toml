@@ -44,6 +44,9 @@ Issues = "https://github.com/gearlux/logflow/issues"
 where = ["."]
 include = ["logflow*"]
 
+[tool.setuptools.package-data]
+logflow = ["py.typed"]
+
 [tool.black]
 line-length = 120
 target-version = ['py38']
