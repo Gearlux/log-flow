@@ -64,14 +64,21 @@ pipeline {
                 always {
                     // Archive and display JUnit test results
                     junit allowEmptyResults: true, testResults: 'test-report.xml'
-                    
+
                     // Display Coverage in Jenkins UI using Code Coverage API Plugin
                     recordCoverage tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']]
                 }
             }
         }
 
-    }
+        stage('Verify Examples') {
+            steps {
+                echo 'Running project examples...'
+                sh "for f in examples/*.py; do echo \"Running $f...\"; ${VENV_BIN}/python3 \"$f\"; done"
+            }
+        }
+        }
+
 
     post {
         always {
