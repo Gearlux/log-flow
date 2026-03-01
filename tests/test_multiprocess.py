@@ -27,15 +27,21 @@ def test_multiprocess_safety(tmp_path: Path) -> None:
     main_logger = get_logger("main")
     main_logger.info("Main start")
 
+    # Use 'spawn' context for consistent behavior on Linux, macOS, and Windows.
+    # This avoids deadlocks with Loguru's background sink queue.
+    ctx = mp.get_context("spawn")
     processes = []
     num_workers = 4
     for i in range(num_workers):
-        p = mp.Process(target=worker, args=(i, log_dir, script_name))
+        p = ctx.Process(target=worker, args=(i, log_dir, script_name))
         p.start()
         processes.append(p)
 
     for p in processes:
-        p.join()
+        p.join(timeout=15)
+        if p.is_alive():
+            p.terminate()
+            p.join()
 
     main_logger.info("Main end")
     shutdown_logging()
