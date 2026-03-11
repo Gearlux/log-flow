@@ -5,6 +5,7 @@ import pytest
 from loguru import logger
 
 import logflow.core
+import logflow.discovery
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +25,8 @@ def global_reset_logflow(tmp_path: Any, monkeypatch: Any) -> Generator[None, Non
         os.environ.pop(k, None)
 
     # 4. Reset core state pointers
+    if hasattr(logflow.discovery.get_rank, "cache_clear"):
+        logflow.discovery.get_rank.cache_clear()
     logflow.core._reset_state()
 
     # 5. Purge Loguru
@@ -32,6 +35,8 @@ def global_reset_logflow(tmp_path: Any, monkeypatch: Any) -> Generator[None, Non
     yield
 
     # Cleanup after
+    if hasattr(logflow.discovery.get_rank, "cache_clear"):
+        logflow.discovery.get_rank.cache_clear()
     logflow.core._reset_state()
     for k in list(os.environ.keys()):
         if k.startswith("LOGFLOW_") or k.startswith("_LOGFLOW_"):
