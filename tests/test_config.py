@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+import pytest
+
 from logflow.config import get_xdg_config_dir, load_config
 
 
@@ -79,10 +81,14 @@ def test_xdg_config_path_default() -> None:
     assert ".config/logflow" in str(path)
 
 
-def test_load_config_corrupt_yaml(tmp_path: Path) -> None:
+def test_load_config_corrupt_yaml(tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
     # Create invalid YAML
     logflow_yaml = tmp_path / "logflow.yaml"
     logflow_yaml.write_bytes(b"\x00\x01\x02")  # Binary data is invalid YAML
+
+    # Isolate from real global config
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
 
     old_cwd = os.getcwd()
     os.chdir(tmp_path)
@@ -94,9 +100,13 @@ def test_load_config_corrupt_yaml(tmp_path: Path) -> None:
         os.chdir(old_cwd)
 
 
-def test_load_config_pyproject_missing_tool(tmp_path: Path) -> None:
+def test_load_config_pyproject_missing_tool(tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text("[tool.something_else]\nkey = 'value'")
+
+    # Isolate from real global config
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
 
     old_cwd = os.getcwd()
     os.chdir(tmp_path)
@@ -107,11 +117,15 @@ def test_load_config_pyproject_missing_tool(tmp_path: Path) -> None:
         os.chdir(old_cwd)
 
 
-def test_load_config_corrupt_toml(tmp_path: Path) -> None:
+def test_load_config_corrupt_toml(tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
     pyproject = tmp_path / "pyproject.toml"
     # Write invalid TOML (unquoted string or similar)
     pyproject.write_text("[tool.logflow]\nkey = value_without_quotes")
 
+    # Isolate from real global config
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
     old_cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
@@ -121,8 +135,12 @@ def test_load_config_corrupt_toml(tmp_path: Path) -> None:
         os.chdir(old_cwd)
 
 
-def test_load_config_empty(tmp_path: Path) -> None:
+def test_load_config_empty(tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
     # Test loading when no files exist
+    # Isolate from real global config
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
     old_cwd = os.getcwd()
     os.chdir(tmp_path)
     try:

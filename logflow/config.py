@@ -1,64 +1,66 @@
 import os
-import sys
 from pathlib import Path
 from typing import Any, Dict
 
 import yaml
 
-# For Python < 3.11, use tomli
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
+try:
+    import tomllib  # type: ignore
+except ImportError:
+    import tomli as tomllib  # type: ignore
 
 
 def get_xdg_config_dir() -> Path:
-    """Return the XDG config directory (e.g., ~/.config/logflow)."""
+    """Get the XDG compliant configuration directory for LogFlow."""
     xdg_config_home = os.getenv("XDG_CONFIG_HOME")
     if xdg_config_home:
-        return Path(xdg_config_home) / "logflow"
-    return Path.home() / ".config" / "logflow"
+        base = Path(xdg_config_home)
+    else:
+        base = Path("~/.config").expanduser()
+    return base / "logflow"
 
 
 def load_config() -> Dict[str, Any]:
     """
-    Load configuration from multiple sources with the following priority:
-    1. Local logflow.yaml / logflow.yml
-    2. Local pyproject.toml ([tool.logflow] section)
-    3. XDG User Config (~/.config/logflow/config.yaml)
-
-    Returns:
-        A dictionary containing the merged configuration.
+    Load LogFlow configuration from standard locations.
+    Priority:
+    1. logflow.yaml (CWD)
+    2. pyproject.toml (CWD)
+    3. ~/.config/logflow/config.yaml (or XDG_CONFIG_HOME)
     """
     config: Dict[str, Any] = {}
 
-    # 1. XDG User Config (lowest priority)
-    xdg_path = get_xdg_config_dir() / "config.yaml"
-    if xdg_path.exists():
-        try:
-            with open(xdg_path, "r") as f:
-                config.update(yaml.safe_load(f) or {})
-        except Exception:
-            pass
-
-    # 2. Local pyproject.toml
-    pyproject_path = Path("pyproject.toml")
-    if pyproject_path.exists():
-        try:
-            with open(pyproject_path, "rb") as f:
-                toml_data = tomllib.load(f)
-                config.update(toml_data.get("tool", {}).get("logflow", {}))
-        except Exception:
-            pass
-
-    # 3. Local logflow.yaml / logflow.yml (highest priority)
+    # 1. Check for logflow.yaml / .yml in CWD
     for ext in ["yaml", "yml"]:
-        local_yaml = Path(f"logflow.{ext}")
-        if local_yaml.exists():
+        yaml_path = Path(f"logflow.{ext}")
+        if yaml_path.exists():
             try:
-                with open(local_yaml, "r") as f:
+                with open(yaml_path, "r") as f:
                     config.update(yaml.safe_load(f) or {})
-                    break
+                    return config # Return immediately if found in CWD
+            except Exception:
+                pass
+
+    # 2. Check for pyproject.toml in CWD
+    toml_path = Path("pyproject.toml")
+    if toml_path.exists():
+        try:
+            with open(toml_path, "rb") as f:
+                data = tomllib.load(f)
+                toml_cfg = data.get("tool", {}).get("logflow", {})
+                if toml_cfg:
+                    config.update(toml_cfg)
+                    return config # Return immediately if found in CWD
+        except Exception:
+            pass
+
+    # 3. Check for global config (~/.config/logflow/config.yaml or XDG_CONFIG_HOME)
+    if not config:
+        global_path = get_xdg_config_dir() / "config.yaml"
+        if global_path.exists():
+            try:
+                with open(global_path, "r") as f:
+                    config.update(yaml.safe_load(f) or {})
             except Exception:
                 pass
 
