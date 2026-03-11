@@ -2,22 +2,21 @@ import logging
 import warnings
 from pathlib import Path
 
-from logflow import configure_logging, shutdown_logging
+from logflow.core import configure_logging, shutdown_logging
 
 
-def test_intercept_logging(tmp_path: Path) -> None:
+def test_intercept_standard_logging(tmp_path: Path) -> None:
     log_dir = tmp_path / "intercept_logs"
-    configure_logging(log_dir=log_dir, script_name="intercept")
+    configure_logging(log_dir=log_dir, script_name="standard")
 
-    # Use standard logging
-    std_logger = logging.getLogger("standard_lib")
-    std_logger.error("Standard logging message")
+    std_logger = logging.getLogger("test_lib")
+    std_logger.info("Message from standard logging")
 
     shutdown_logging()
 
-    log_file = log_dir / "intercept.log"
-    content = log_file.read_text()
-    assert "Standard logging message" in content
+    log_file = log_dir / "standard.log"
+    assert log_file.exists()
+    assert "Message from standard logging" in log_file.read_text()
 
 
 def test_intercept_exception(tmp_path: Path) -> None:
@@ -33,6 +32,7 @@ def test_intercept_exception(tmp_path: Path) -> None:
     shutdown_logging()
 
     log_file = log_dir / "exception.log"
+    assert log_file.exists()
     content = log_file.read_text()
     assert "An error occurred" in content
     assert "ValueError: Intercepted error" in content
@@ -60,8 +60,11 @@ def test_intercept_unknown_level(tmp_path: Path) -> None:
     shutdown_logging()
 
     log_file = log_dir / "unknown.log"
+    assert log_file.exists()
     content = log_file.read_text()
     assert "Unknown level message" in content
+    # Note: Loguru typically maps unknown levels to level names like 'Level 99'
+    assert "Level 99" in content or "99" in content
 
 
 def test_intercept_warnings(tmp_path: Path) -> None:
@@ -74,6 +77,7 @@ def test_intercept_warnings(tmp_path: Path) -> None:
     shutdown_logging()
 
     log_file = log_dir / "warnings.log"
+    assert log_file.exists()
     content = log_file.read_text()
     assert "Custom warning message" in content
     assert "UserWarning" in content

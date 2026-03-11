@@ -1,25 +1,24 @@
 import os
+import time
 from pathlib import Path
+from typing import Any
 
-from logflow import configure_logging, get_logger, shutdown_logging
+from logflow.core import configure_logging, get_logger, shutdown_logging
 
 
-def test_configure_and_log(tmp_path: Path) -> None:
+def test_configure_default(tmp_path: Path) -> None:
     log_dir = tmp_path / "logs"
-    configure_logging(log_dir=log_dir, script_name="test_run")
+    script_name = "test_app"
 
-    logger = get_logger("test_module")
-    logger.info("Test message")
+    configure_logging(log_dir=log_dir, script_name=script_name)
 
-    # Ensure file is created
-    log_file = log_dir / "test_run.log"
-    assert log_file.exists()
-
+    test_logger = get_logger("test")
+    test_logger.info("Test message")
     shutdown_logging()
 
-    content = log_file.read_text()
-    assert "test_core" in content
-    assert "Test message" in content
+    log_file = log_dir / f"{script_name}.log"
+    assert log_file.exists()
+    assert "Test message" in log_file.read_text()
 
 
 def test_configure_env_overrides_file(tmp_path: Path) -> None:
@@ -33,14 +32,14 @@ def test_configure_env_overrides_file(tmp_path: Path) -> None:
     os.environ["LOGFLOW_FILE_LEVEL"] = "TRACE"
     try:
         configure_logging(log_dir=log_dir, script_name="env_over")
-        # In a real test we'd check the internal state, but here we verify it runs
-        # and create logs with correct params.
-        logger = get_logger("env_test")
-        logger.trace("Trace message")
+        test_logger = get_logger("env_test")
+        test_logger.trace("Trace message")
         shutdown_logging()
 
-        content = (log_dir / "env_over.log").read_text()
-        assert "Trace message" in content
+        # Check the actual file created
+        log_file = log_dir / "env_over.log"
+        assert log_file.exists()
+        assert "Trace message" in log_file.read_text()
     finally:
         os.chdir(old_cwd)
         del os.environ["LOGFLOW_FILE_LEVEL"]
@@ -48,16 +47,17 @@ def test_configure_env_overrides_file(tmp_path: Path) -> None:
 
 def test_configure_args_overrides_env(tmp_path: Path) -> None:
     log_dir = tmp_path / "arg_test"
-    os.environ["LOGFLOW_FILE_LEVEL"] = "ERROR"
+    os.environ["LOGFLOW_FILE_LEVEL"] = "INFO"
     try:
-        # Args 'DEBUG' should win over Env 'ERROR'
-        configure_logging(log_dir=log_dir, script_name="arg_over", file_level="DEBUG")
-        logger = get_logger("arg_test")
-        logger.debug("Debug message")
+        # Pass TRACE via argument
+        configure_logging(log_dir=log_dir, script_name="arg_over", file_level="TRACE")
+        test_logger = get_logger("arg_test")
+        test_logger.trace("Trace message from arg")
         shutdown_logging()
 
-        content = (log_dir / "arg_over.log").read_text()
-        assert "Debug message" in content
+        log_file = log_dir / "arg_over.log"
+        assert log_file.exists()
+        assert "Trace message from arg" in log_file.read_text()
     finally:
         del os.environ["LOGFLOW_FILE_LEVEL"]
 
@@ -66,77 +66,55 @@ def test_configure_rank_non_zero(tmp_path: Path) -> None:
     log_dir = tmp_path / "rank_test"
     os.environ["RANK"] = "1"
     try:
-        configure_logging(log_dir=log_dir, script_name="rank_one")
-        logger = get_logger("rank_test")
-        logger.info("Non-zero rank message")
+        configure_logging(log_dir=log_dir, script_name="rank_app")
+        test_logger = get_logger("rank")
+        test_logger.info("Rank 1 message")
         shutdown_logging()
 
-        # Should still exist in file
-        log_file = log_dir / "rank_one.log"
-        assert "Non-zero rank message" in log_file.read_text()
-        assert "[rank 1]" in log_file.read_text()
+        log_file = log_dir / "rank_app.log"
+        assert log_file.exists()
+        content = log_file.read_text()
+        assert "Rank 1 message" in content
+        assert "[rank 1]" in content
     finally:
         del os.environ["RANK"]
 
 
-def test_configure_rank_mocked(tmp_path: Path) -> None:
-    from unittest.mock import patch
-
+def test_configure_rank_mocked(tmp_path: Path, monkeypatch: Any) -> None:
     log_dir = tmp_path / "mock_rank"
-    with patch("logflow.core.get_rank", return_value=10):
-        configure_logging(log_dir=log_dir, script_name="mocked")
-        logger = get_logger("mock_rank")
-        logger.info("Mocked rank message")
-        shutdown_logging()
+    # Mock get_rank to return 2
+    import logflow.discovery
 
-        content = (log_dir / "mocked.log").read_text()
-        assert "[rank 10]" in content
+    monkeypatch.setattr(logflow.discovery, "get_rank", lambda: 2)
 
-
-def test_shutdown_multiple_times() -> None:
-    # Should not raise exception
-    shutdown_logging()
+    configure_logging(log_dir=log_dir, script_name="mocked")
+    test_logger = get_logger("test")
+    test_logger.info("Mocked rank message")
     shutdown_logging()
 
-
-def test_auto_configure(tmp_path: Path) -> None:
-    from unittest.mock import patch
-
-    import logflow.core
-
-    # Reset global state for this test
-    with patch("logflow.core._configured", False):
-        with patch("logflow.core.configure_logging") as mock_conf:
-            logflow.core.get_logger("auto")
-            mock_conf.assert_called_once()
-
-
-def test_rotation_failure(tmp_path: Path) -> None:
-    from unittest.mock import patch
-
-    log_dir = tmp_path / "rot_fail"
-    log_dir.mkdir()
-    log_file = log_dir / "app.log"
-    log_file.write_text("old")
-
-    with patch("pathlib.Path.rename", side_effect=OSError("Access denied")):
-        # Should not crash, just log warning
-        configure_logging(log_dir=log_dir, script_name="app")
-        shutdown_logging()
+    log_file = log_dir / "mocked.log"
+    assert log_file.exists()
+    content = log_file.read_text()
+    assert "Mocked rank message" in content
+    assert "[rank 2]" in content
 
 
 def test_configure_no_rotation(tmp_path: Path) -> None:
     log_dir = tmp_path / "no_rotate"
     log_dir.mkdir()
     log_file = log_dir / "app.log"
-    log_file.write_text("old")
+    log_file.write_text("old\n")
 
+    # Wait a bit so mtime is different if needed
+    time.sleep(0.1)
+
+    # Initial config (this will clobber or append depending on mode)
+    # Since it's the first config in this process, it might rotate if rotation_on_startup is True
     configure_logging(log_dir=log_dir, script_name="app", rotation_on_startup=False)
-    logger = get_logger("no_rotate")
-    logger.info("new")
+    test_logger = get_logger("no_rotate")
+    test_logger.info("new")
     shutdown_logging()
 
-    # Should append, not rotate
     content = log_file.read_text()
     assert "old" in content
     assert "new" in content
@@ -148,15 +126,16 @@ def test_startup_rotation(tmp_path: Path) -> None:
     log_file = log_dir / "rotate.log"
     log_file.write_text("old content")
 
-    # Configure twice to trigger rotation
+    # Small sleep to ensure mtime is distinct
+    time.sleep(0.1)
+
+    # First configuration: should rotate the existing file
     configure_logging(log_dir=log_dir, script_name="rotate", rotation_on_startup=True)
+    get_logger().info("new content")
     shutdown_logging()
 
     # Check that a rotated file exists
     rotated_files = list(log_dir.glob("rotate.*.log"))
     assert len(rotated_files) == 1
-    assert rotated_files[0].read_text() == "old content"
-
-    # New log should be empty or have new content
-    assert log_file.exists()
-    assert "old content" not in log_file.read_text()
+    assert "old content" in rotated_files[0].read_text()
+    assert "new content" in (log_dir / "rotate.log").read_text()

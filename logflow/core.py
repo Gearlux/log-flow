@@ -1,18 +1,65 @@
 import os
+import re
+import shutil
 import sys
+import time
 from datetime import datetime
+from multiprocessing import current_process
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional, TypedDict, Union
 
 from loguru import logger
 
+from logflow import discovery
 from logflow.config import load_config
-from logflow.discovery import determine_script_name, get_rank
 from logflow.intercept import setup_interception
 
-# Global state to prevent redundant configuration
-_configured = False
-_log_file: Optional[Path] = None
+
+class State(TypedDict):
+    configured: bool
+    log_file: Optional[Path]
+
+
+# Authority state (SHARED dictionary to survive reloads if possible)
+_STATE: State = {
+    "configured": False,
+    "log_file": None,
+}
+
+
+def _reset_state() -> None:
+    """Nuclear reset for tests."""
+    _STATE["configured"] = False
+    _STATE["log_file"] = None
+    logger.remove()
+
+
+def _rotate(path: Path, retention: int = 5) -> None:
+    """Manual rotation of an existing log file (Rank 0 only)."""
+    if not path.exists() or path.stat().st_size == 0:
+        return
+    if discovery.get_rank() not in (None, 0):
+        return
+
+    timestamp = datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d_%H-%M-%S")
+    rotated_path = path.parent / f"{path.stem}.{timestamp}{path.suffix}"
+
+    try:
+        path.rename(rotated_path)
+        # Directory-wide cleanup for THIS script
+        pattern = re.escape(path.stem) + r"\.\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}" + re.escape(path.suffix)
+        candidates = sorted(
+            [p for p in path.parent.iterdir() if p.is_file() and re.fullmatch(pattern, p.name)],
+            key=lambda p: (p.stat().st_mtime, p.name),
+            reverse=True,
+        )
+        for old in candidates[retention:]:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def configure_logging(
@@ -23,147 +70,127 @@ def configure_logging(
     rotation_on_startup: Optional[bool] = None,
     retention: Optional[int] = None,
     enqueue: Optional[bool] = None,
+    force: bool = False,
 ) -> None:
     """
-    Configure the global LogFlow system.
-    Configuration priority: function args > env vars > file config > defaults.
+    Configure the global LogFlow system with Atomic Pivot support.
     """
-    global _configured, _log_file
 
-    # 1. Load configuration from files (lowest priority)
+    # 1. Identity Check
+    is_child = current_process().name != "MainProcess"
+    rank = discovery.get_rank()
+    is_main_rank = rank is None or rank == 0
+    is_main_proc = not is_child and is_main_rank
+
+    if _STATE["configured"] and not force:
+        return
+
+    # 2. Resolve Parameters
     file_cfg = load_config()
-
-    # 2. Merge with defaults and environment variables
-    # Values are resolved in order: Args -> Env -> Config File -> Default
     log_dir_val = log_dir or os.getenv("LOGFLOW_DIR") or file_cfg.get("log_dir") or "./logs"
-
-    script_name = script_name or os.getenv("LOGFLOW_SCRIPT_NAME") or file_cfg.get("script_name")
-
-    file_level_val = file_level or os.getenv("LOGFLOW_FILE_LEVEL") or file_cfg.get("file_level") or "DEBUG"
-
-    console_level_val = console_level or os.getenv("LOGFLOW_CONSOLE_LEVEL") or file_cfg.get("console_level") or "INFO"
-
-    rotation_on_startup_val = (
-        rotation_on_startup
-        if rotation_on_startup is not None
-        else (
-            os.getenv("LOGFLOW_STARTUP_ROTATION", "").lower() == "true"
-            if os.getenv("LOGFLOW_STARTUP_ROTATION")
-            else file_cfg.get("rotation_on_startup", True)
-        )
-    )
-
-    retention_val = (
-        retention
-        or (int(os.getenv("LOGFLOW_RETENTION", "0")) if os.getenv("LOGFLOW_RETENTION") else None)
-        or file_cfg.get("retention")
-        or 5
-    )
-
-    enqueue_val = (
-        enqueue
-        if enqueue is not None
-        else (
-            os.getenv("LOGFLOW_ENQUEUE", "").lower() == "true"
-            if os.getenv("LOGFLOW_ENQUEUE")
-            else file_cfg.get("enqueue", True)
-        )
-    )
-
-    # Basic setup
-    log_dir_path = Path(log_dir_val)
+    log_dir_path = Path(log_dir_val).expanduser().resolve()
     log_dir_path.mkdir(parents=True, exist_ok=True)
 
-    # Determine script name and rank
-    script_name = determine_script_name(script_name)
-    rank = get_rank()
-    is_rank_zero = rank is None or rank == 0
+    def resolve_level(arg: Optional[str], env: str, key: str, default: str) -> str:
+        return (arg or os.getenv(env) or file_cfg.get(key) or default).upper()
 
-    # Multiprocessing awareness
-    from multiprocessing import current_process
+    file_level_val = resolve_level(file_level, "LOGFLOW_FILE_LEVEL", "file_level", "DEBUG")
+    console_level_val = resolve_level(console_level, "LOGFLOW_CONSOLE_LEVEL", "console_level", "INFO")
+    retention_val = retention if retention is not None else file_cfg.get("retention", 5)
+    do_rotation = rotation_on_startup if rotation_on_startup is not None else file_cfg.get("rotation_on_startup", True)
 
-    is_main_process = current_process().name == "MainProcess"
-    has_rotated = os.getenv("_LOGFLOW_ROTATED") == "1"
+    target_name = discovery.determine_script_name(
+        script_name or os.getenv("LOGFLOW_SCRIPT_NAME") or file_cfg.get("script_name")
+    )
+    new_log_file = log_dir_path / f"{target_name}.log"
 
-    # Remove default Loguru handler
-    logger.remove()
+    # 3. PIVOT & ROTATION (Authority: Main Process Only)
+    if is_main_proc:
+        log_file_val = _STATE["log_file"]
+        current_abs = log_file_val.resolve() if log_file_val else None
+        new_abs = new_log_file.resolve()
 
-    # 1. Console Handler (Filtered to Rank 0 by default)
-    if is_rank_zero:
-        rank_fmt = "" if rank is None else f"<yellow>[rank {rank}]</yellow> | "
+        if current_abs and new_abs != current_abs:
+            # Pivot: Consolidate interim -> target
+            logger.remove()  # Close current sink
+            try:
+                logger.complete()
+            except Exception:
+                pass
+
+            if do_rotation:
+                _rotate(new_log_file, retention_val)
+            if log_file_val and log_file_val.exists():
+                try:
+                    shutil.copy2(log_file_val, new_log_file)
+                    time.sleep(0.05)  # Release OS Lock
+                    log_file_val.unlink()
+                except Exception:
+                    pass
+            _STATE["configured"] = False
+        elif do_rotation and not _STATE["configured"] and new_log_file.exists():
+            # STARTUP: Rotate existing log of same name
+            _rotate(new_log_file, retention_val)
+
+    # 4. Standard Setup (Authority: Main Process Only)
+    def rank_filter(record: Any) -> bool:
+        r = discovery.get_rank()
+        record["extra"]["rank_tag"] = f"[rank {r}] | " if r and r > 0 else ""
+        return True
+
+    if not _STATE["configured"] and is_main_proc:
+        logger.remove()
         console_format = (
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
             "<level>{level: <8}</level> | "
-            f"{rank_fmt}"
-            "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
+            "{extra[rank_tag]}<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
             "<level>{message}</level>"
         )
-        logger.add(
-            sys.stderr,
-            level=console_level_val.upper(),
-            format=console_format,
-            colorize=True,
-            enqueue=enqueue_val,
-        )
+        logger.add(sys.stderr, level=console_level_val, format=console_format, filter=rank_filter, colorize=True)
 
-    # 2. File Handler
-    _log_file = log_dir_path / f"{script_name}.log"
-
-    # Handle Startup Rotation (Only on absolute Main Process at Rank 0)
-    if rotation_on_startup_val and is_main_process and is_rank_zero and not has_rotated and _log_file.exists():
-        try:
-            mtime = _log_file.stat().st_mtime
-            ts = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d_%H-%M-%S")
-            archive_path = _log_file.parent / f"{_log_file.stem}.{ts}{_log_file.suffix}"
-            _log_file.rename(archive_path)
-
-            # Retention cleanup
-            archives = sorted(
-                _log_file.parent.glob(f"{_log_file.stem}.*.*{_log_file.suffix}"),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )
-            for old in archives[retention_val:]:
-                old.unlink()
-
-            # Signal to all future children that rotation is done
-            os.environ["_LOGFLOW_ROTATED"] = "1"
-        except Exception as e:
-            logger.warning(f"Startup rotation failed: {e}")
-
-    # If we are a child and rotation was already done, ensure we don't do it again
-    if not is_main_process:
-        os.environ["_LOGFLOW_ROTATED"] = "1"
-
-    rank_seg = "" if rank is None else f"[rank {rank}] | "
-    file_format = (
-        "{time:YYYY-MM-DD HH:mm:ss.SSS} | " "{level: <8} | " f"{rank_seg}" "{name}:{function}:{line} | " "{message}"
-    )
+    # 5. File Sink management
+    file_format = "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {extra[rank_tag]}{name}:{function}:{line} | {message}"
 
     logger.add(
-        str(_log_file),
-        level=file_level_val.upper(),
+        str(new_log_file),
+        level=file_level_val,
         format=file_format,
-        enqueue=enqueue_val,
-        rotation="10 MB",  # Built-in size rotation
-        retention=retention_val,
-        backtrace=True,
-        diagnose=True,
+        filter=rank_filter,
+        enqueue=enqueue if enqueue is not None else False,
+        rotation=None,
+        retention=None,
+        mode="a",
     )
 
-    # 3. Intercept framework logs
+    was_cfg = _STATE["configured"]
+    _STATE["log_file"] = new_log_file
+    _STATE["configured"] = True
     setup_interception()
 
-    _configured = True
-    if is_rank_zero:
-        logger.info(f"LogFlow initialized (Rank: {rank if rank is not None else 'N/A'})")
+    if is_main_proc:
+        os.environ["_LOGFLOW_CONFIGURED"] = "1"
+        os.environ["LOGFLOW_SCRIPT_NAME"] = target_name
+
+        # Directory-wide global retention
+        time.sleep(0.05)
+        lfs = sorted(
+            [f for f in log_dir_path.glob("*.log") if f.is_file()],
+            key=lambda x: (x.stat().st_mtime, x.name),
+            reverse=True,
+        )
+        # EXCLUDE the current log file from purging
+        to_purge = [f for f in lfs if f.resolve() != new_log_file.resolve()]
+        if len(to_purge) >= retention_val:
+            for f in to_purge[retention_val - 1 :]:
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+
+        logger.info(f"LogFlow {'Re-' if was_cfg else ''}initialized: {new_log_file.name}")
 
 
 def shutdown_logging() -> None:
-    """
-    Ensure all queued log messages are processed and all sinks are closed.
-    Call this before the main script exits to ensure no logs are lost.
-    """
     try:
         logger.complete()
     except Exception:
@@ -171,11 +198,6 @@ def shutdown_logging() -> None:
 
 
 def get_logger(name: Optional[str] = None) -> Any:
-    """
-    Get a logger instance bound to the given name.
-    """
-    if not _configured:
-        # Auto-configure with defaults if not explicitly called
+    if not _STATE["configured"]:
         configure_logging()
-
     return logger.bind(name=name) if name else logger
