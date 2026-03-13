@@ -40,10 +40,10 @@ def test_rotate_cleanup_error(tmp_path: Path, monkeypatch: Any) -> None:
 
 def test_configure_already_configured_no_force() -> None:
     """Early return when already configured and force=False."""
-    logflow.core._STATE["configured"] = True
+    logflow.core.LoggingState.configured = True
     # If it returns early, it shouldn't raise errors even if args are invalid
     configure_logging(log_dir="/non/existent/path", force=False)
-    assert logflow.core._STATE["configured"] is True
+    assert logflow.core.LoggingState.configured is True
 
 
 def test_pivot_copy_error(tmp_path: Path, monkeypatch: Any) -> None:

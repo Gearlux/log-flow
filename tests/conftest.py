@@ -27,7 +27,7 @@ def global_reset_logflow(tmp_path: Any, monkeypatch: Any) -> Generator[None, Non
     # 4. Reset core state pointers
     if hasattr(logflow.discovery.get_rank, "cache_clear"):
         logflow.discovery.get_rank.cache_clear()
-    logflow.core._reset_state()
+    logflow.core.LoggingState.reset()
 
     # 5. Purge Loguru
     logger.remove()
@@ -37,7 +37,7 @@ def global_reset_logflow(tmp_path: Any, monkeypatch: Any) -> Generator[None, Non
     # Cleanup after
     if hasattr(logflow.discovery.get_rank, "cache_clear"):
         logflow.discovery.get_rank.cache_clear()
-    logflow.core._reset_state()
+    logflow.core.LoggingState.reset()
     for k in list(os.environ.keys()):
         if k.startswith("LOGFLOW_") or k.startswith("_LOGFLOW_"):
             os.environ.pop(k)

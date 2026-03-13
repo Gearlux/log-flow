@@ -1,4 +1,5 @@
 import os
+import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple, cast
 
@@ -18,8 +19,8 @@ def get_xdg_config_dir() -> Path:
 
 def load_config() -> Dict[str, Any]:
     """
-    Load LogFlow configuration from standard locations.
-    Priority: logflow.yaml -> logflow.yml -> pyproject.toml -> global config
+    Load and merge LogFlow configuration from standard locations.
+    Priority (Highest to Lowest): logflow.yaml -> logflow.yml -> pyproject.toml -> global config
     """
 
     def _yaml(p: Path) -> Dict[str, Any]:
@@ -37,13 +38,16 @@ def load_config() -> Dict[str, Any]:
         (get_xdg_config_dir() / "config.yaml", _yaml),
     ]
 
-    for path, loader in candidates:
+    final_cfg: Dict[str, Any] = {}
+    # Iterate in reverse to let higher priority override lower priority
+    for path, loader in reversed(candidates):
         if path.exists():
             try:
                 cfg = loader(path)
                 if cfg:
-                    return cfg
-            except Exception:
+                    final_cfg.update(cfg)
+            except Exception as e:
+                warnings.warn(f"LogFlow: Failed to load config from {path}: {e}")
                 continue
 
-    return {}
+    return final_cfg
