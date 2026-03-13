@@ -9,6 +9,21 @@ import logflow.discovery
 from logflow.core import configure_logging, shutdown_logging
 
 
+def test_rotate_non_zero_rank(tmp_path: Path, monkeypatch: Any) -> None:
+    """Line 52: if discovery.get_rank() not in (None, 0): return"""
+    log_file = tmp_path / "test.log"
+    log_file.write_text("content")
+
+    monkeypatch.setattr(logflow.discovery, "get_rank", lambda: 1)
+
+    from logflow.core import _rotate
+
+    _rotate(log_file)
+
+    assert log_file.exists()
+    assert len(list(tmp_path.glob("test.*.log"))) == 0
+
+
 def test_rotate_cleanup_error(tmp_path: Path, monkeypatch: Any) -> None:
     """Lines 57-62: Exception handling in _rotate cleanup loop"""
     log_file = tmp_path / "test.log"
