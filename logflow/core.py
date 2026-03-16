@@ -100,7 +100,10 @@ def configure_logging(
     """
     Configure the global LogFlow system with Atomic Pivot support.
     """
-    is_main_proc = current_process().name == "MainProcess" and discovery.get_rank() in (None, 0)
+    is_main_proc = current_process().name == "MainProcess" and discovery.get_rank() in (
+        None,
+        0,
+    )
 
     if LoggingState.configured and not force:
         return
@@ -125,7 +128,14 @@ def configure_logging(
     f_level = str(resolve(file_level, "LOGFLOW_FILE_LEVEL", "file_level", "DEBUG")).upper()
     c_level = str(resolve(console_level, "LOGFLOW_CONSOLE_LEVEL", "console_level", "INFO")).upper()
     retention_val = int(resolve(retention, "LOGFLOW_RETENTION", "retention", 5))
-    do_rotation = str_to_bool(resolve(rotation_on_startup, "LOGFLOW_ROTATION_ON_STARTUP", "rotation_on_startup", True))
+    do_rotation = str_to_bool(
+        resolve(
+            rotation_on_startup,
+            "LOGFLOW_ROTATION_ON_STARTUP",
+            "rotation_on_startup",
+            True,
+        )
+    )
     enqueue_val = str_to_bool(resolve(enqueue, "LOGFLOW_ENQUEUE", "enqueue", False))
 
     target_name = discovery.determine_script_name(resolve(script_name, "LOGFLOW_SCRIPT_NAME", "script_name", None))
@@ -150,7 +160,13 @@ def configure_logging(
                 "{extra[rank_tag]}<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
                 "<level>{message}</level>"
             )
-            logger.add(sys.stderr, level=c_level, format=fmt, filter=_rank_filter, colorize=True)
+            logger.add(
+                sys.stderr,
+                level=c_level,
+                format=fmt,
+                filter=_rank_filter,
+                colorize=True,
+            )
 
         file_fmt = (
             "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | " "{extra[rank_tag]}{name}:{function}:{line} | {message}"
