@@ -24,18 +24,16 @@ pipeline {
                     steps {
                         script {
                             def rc = sh(script: "${VENV_BIN}/black --check --diff logflow tests examples > black-diff.txt 2>&1", returnStatus: true)
-                            // Convert Black diff to Checkstyle XML for recordIssues
                             sh """${VENV_BIN}/python3 -c "
 import sys, os
 lines = open('black-diff.txt').readlines()
 with open('black-checkstyle.xml', 'w') as f:
-    f.write('<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<checkstyle version=\"5.0\">\\n')
-    current_file = ''
+    f.write('<?xml version=\\"1.0\\" encoding=\\"UTF-8\\"?>\\n<checkstyle version=\\"5.0\\">\\n')
     for line in lines:
         if line.startswith('would reformat '):
             path = line.replace('would reformat ', '').strip()
-            f.write(f'  <file name=\"{path}\">\\n')
-            f.write(f'    <error line=\"1\" severity=\"warning\" message=\"Black would reformat this file\" source=\"black\"/>\\n')
+            f.write('  <file name=\\"' + path + '\\">\\n')
+            f.write('    <error line=\\"1\\" severity=\\"warning\\" message=\\"Black would reformat this file\\" source=\\"black\\"/>\\n')
             f.write('  </file>\\n')
     f.write('</checkstyle>\\n')
 " """
@@ -55,17 +53,16 @@ with open('black-checkstyle.xml', 'w') as f:
                     steps {
                         script {
                             def rc = sh(script: "${VENV_BIN}/isort --check-only --diff logflow tests examples > isort-diff.txt 2>&1", returnStatus: true)
-                            // Convert Isort diff to Checkstyle XML
                             sh """${VENV_BIN}/python3 -c "
 import sys, os
 lines = open('isort-diff.txt').readlines()
 with open('isort-checkstyle.xml', 'w') as f:
-    f.write('<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<checkstyle version=\"5.0\">\\n')
+    f.write('<?xml version=\\"1.0\\" encoding=\\"UTF-8\\"?>\\n<checkstyle version=\\"5.0\\">\\n')
     for line in lines:
         if line.startswith('ERROR: '):
             path = line.split(' ')[1].strip()
-            f.write(f'  <file name=\"{path}\">\\n')
-            f.write(f'    <error line=\"1\" severity=\"warning\" message=\"Isort import order issues\" source=\"isort\"/>\\n')
+            f.write('  <file name=\\"' + path + '\\">\\n')
+            f.write('    <error line=\\"1\\" severity=\\"warning\\" message=\\"Isort import order issues\\" source=\\"isort\\"/>\\n')
             f.write('  </file>\\n')
     f.write('</checkstyle>\\n')
 " """
@@ -119,7 +116,6 @@ with open('isort-checkstyle.xml', 'w') as f:
             post {
                 always {
                     junit allowEmptyResults: true, testResults: 'test-report.xml'
-                    // CLEAN: Only one recordCoverage call for code coverage to fix overview N/A
                     recordCoverage(
                         id: 'coverage',
                         name: 'Code Coverage',
