@@ -136,7 +136,7 @@ ET.ElementTree(root).write('flake8-report.xml', xml_declaration=True, encoding='
                         tools: [[parser: 'JUNIT', pattern: 'test-report.xml']]
                     )
                     recordCoverage(
-                        id: 'coverage-logflow',
+                        id: 'coverage',
                         name: 'Code Coverage (LogFlow)',
                         tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']]
                     )
