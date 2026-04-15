@@ -7,7 +7,7 @@ name = "logflow"
 version = "0.1.0"
 description = "Modern, multiprocess-safe logging for High-Performance Computing and ML."
 readme = "README.md"
-authors = [{name = "gearlux"}]
+authors = [{name = "Taidal"}]
 license = {text = "MIT"}
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -35,9 +35,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/gearlux/logflow"
-Repository = "https://github.com/gearlux/logflow.git"
-Issues = "https://github.com/gearlux/logflow/issues"
+Homepage = "https://github.com/Gearlux/logflow"
+Repository = "https://github.com/Gearlux/logflow.git"
+Issues = "https://github.com/Gearlux/logflow/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

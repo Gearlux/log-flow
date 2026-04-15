@@ -16,12 +16,12 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-        cache: 'pip'
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
         
-        pip install -e ".[dev]"
+        uv pip install --system -e ".[dev]"
     - name: Run Isort
       run: isort --check-only .
     - name: Run Black
@@ -41,12 +41,12 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-        cache: 'pip'
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
         
-        pip install -e ".[dev]"
+        uv pip install --system -e ".[dev]"
     - name: Run Tests
       run: |
         if [ -d tests ] && find tests -name '*.py' | grep -q .; then
@@ -71,12 +71,12 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-        cache: 'pip'
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
         
-        pip install -e ".[dev]"
+        uv pip install --system -e ".[dev]"
     - name: Run Examples
       run: |
         for f in examples/*.py; do

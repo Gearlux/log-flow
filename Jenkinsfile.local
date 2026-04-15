@@ -19,7 +19,7 @@ pipeline {
                 sh "${VENV_BIN}/python3 --version"
                 echo 'Installing Project in Editable Mode...'
                 
-                sh "${VENV_BIN}/pip install -e .[dev]"
+                sh "${VENV_BIN}/uv pip install -e .[dev]"
             }
         }
 
