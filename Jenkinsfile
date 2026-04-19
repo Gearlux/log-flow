@@ -29,8 +29,8 @@ pipeline {
                 echo 'Bootstrapping uv for fast dependency resolution...'
                 sh "${VENV_BIN}/pip install --upgrade pip uv"
                 echo 'Installing Dependencies...'
-                
                 sh "${VENV_BIN}/uv pip install -e .[dev]"
+                
             }
         }
 
@@ -44,7 +44,7 @@ pipeline {
                             def targets = sh(script: "for d in logflow tests examples; do if [ -d \"\$d\" ] && find \"\$d\" -name '*.py' | grep -q .; then printf \"%s \" \"\$d\"; fi; done || true", returnStdout: true).trim()
                             if (targets) {
                                 def exitCode = sh(script: "set -o pipefail; ${VENV_BIN}/black --check --diff ${targets} 2>&1 | tee black-diff.txt", returnStatus: true)
-                                
+
                                 // Generate checkstyle report
                                 sh """${VENV_BIN}/python3 -c "
 import sys, os
@@ -93,7 +93,7 @@ with open('black-checkstyle.xml', 'w') as f:
                             def targets = sh(script: "for d in logflow tests examples; do if [ -d \"\$d\" ] && find \"\$d\" -name '*.py' | grep -q .; then printf \"%s \" \"\$d\"; fi; done || true", returnStdout: true).trim()
                             if (targets) {
                                 def exitCode = sh(script: "set -o pipefail; ${VENV_BIN}/isort --check-only --diff ${targets} 2>&1 | tee isort-diff.txt", returnStatus: true)
-                                
+
                                 // Generate checkstyle report
                                 sh """${VENV_BIN}/python3 -c "
 import sys, os
